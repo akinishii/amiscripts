@@ -22,13 +22,13 @@ from sys import argv
 #fname = './RODN/RODN20220831_044832_V06' #NEXRAD Level-IIデータorLevel-IIデータのファイルリストを指定
 fname = argv[1]
 flist = True #Ture:fnameはファイルリスト、False:fnameはNEXRAD LEVEL2ファイル
-figdir = './rodn_zv' #画像を出力するディレクトリ
-xmin = -250 #描画範囲の西端 (レーダを中心とした座標で東が正。kmで指定)
-xmax = 250  #東端 (km)
-ymin = -250 #南端 (レーダを中心とした座標で北が正。kmで指定)
-ymax = 250  #北端 (km)
-circle_range = np.arange(50,251,50) #レーダから半径circle_range kmの円を描く(リスト or ndarrayで指定)
-hair_length = 25 #レーダ中心を示す十字の長さ(km)
+figdir = './pgua_zv' #画像を出力するディレクトリ
+xmin = -400 #描画範囲の西端 (レーダを中心とした座標で東が正。kmで指定)
+xmax = 400  #東端 (km)
+ymin = -400 #南端 (レーダを中心とした座標で北が正。kmで指定)
+ymax = 400  #北端 (km)
+circle_range = np.arange(100,401,100) #レーダから半径circle_range kmの円を描く(リスト or ndarrayで指定)
+hair_length = 50 #レーダ中心を示す十字の長さ(km)
 ##パラメータ設定ここまで
 
 #%%
