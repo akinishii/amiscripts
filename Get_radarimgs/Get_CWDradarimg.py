@@ -1,5 +1,5 @@
 """
-Get_CWBradarimg.py ver 1.0 coded by A.NISHII
+Get_CWBradarimg.py ver 1.1 coded by A.NISHII
 台湾中央気象局の合成レーダー画像(反射強度)と落雷分布図を入手する
 約24時間前のデータまで取得可能
 Scraping Taiwan Central Weather Bureau's radar composite images
@@ -14,16 +14,17 @@ python3 Get_CWDradarimg.py
 
 HISTORY(yyyy.mm.dd)
 ver 1.0 First created 2023.06.12 A.NISHII
+ver 1.1 Bug fixed 2023.09.04 A.NISHII
 
 """
 ###Parameter settings###
-sdate = '202306011800' #Start date of dl (yyyymmddHHMM, TST(UTC+8))
-edate = '202306011810' #End date of dl (yyyymmddHHMM, TST(UTC+8))
+sdate = '202309030700' #Start date of dl (yyyymmddHHMM, TST(UTC+8))
+edate = '202309040700' #End date of dl (yyyymmddHHMM, TST(UTC+8))
 freq  = 10 #DL inverbal of images (in minutes)
 region = 1 #0:Broad area 1:Limited area(around Taiwan only)
-lighting = True #True: Lightning map also downloaded
+lighting = False #True: Lightning map also downloaded
 
-outdir = './rimg_cwb' #Saving directory of figures
+outdir = './zoom' #Saving directory of figures
 ###End of Parameter settings###
 
 #import libraries
@@ -53,9 +54,9 @@ def dl_file(url,savepath):
 
 ###Main###
 if region == 0:
-    head = 'CV1_TW_3600_'
-elif region == 1:
     head = 'CV1_3600_'
+elif region == 1:
+    head = 'CV1_TW_3600_'
 else:
     raise ValueError('"region" variable shold be set 0 or 1')
 
