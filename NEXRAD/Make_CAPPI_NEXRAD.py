@@ -3,12 +3,13 @@
 Make_CAPPI_NEXRAD.py ver 1.0 coded by A.NISHII
 NEXRAD Level-IIデータからPyartを用いてCAPPIを作成する
 偏波パラメータ(Kdp、Zdr、ρhv)の出力にも対応
-*偏波間位相差変化率(Kdp)は偏波間位相差(psidp)から算出したものを使用
+*偏波間位相差変化率(Kdp)は偏波間位相差(psidp)から算出したものを使用 (kdp_vulpianiを使用)
 *緯度経度座標系への投影はレーダーを中心とした正距方位図法を使用
 *反射強度0 dBZ未満のグリッドは内挿に用いない点に注意
 
 HISTORY(yyyy.mm.dd)
 ver 1.0 First created 2023.05.15 A.NISHII
+ver 1.1 Bug fixed (fill_valueの設定ミス) ドップラー速度出力をフラグ化 2024.07.09 A.NISHII
 """
 
 import numpy as np
@@ -18,15 +19,16 @@ import datetime
 import locale
 from os import makedirs
 from sys import argv
+import netCDF4
 
 #%%
 ##パラメータ設定
-#fname = './RODN/maysak/RODN20200831_180549_V06'
+#fname = '../data/RODN/RODN20220831_032654_V06'
 fname = argv[1] #入力ファイル(NEXRAD Level-IIデータorLevel-IIデータのファイルリストを指定)
-flist = True #Ture:fnameはファイルリスト、False:fnameはNEXRAD LEVEL2ファイル
+flist = False #Ture:fnameはNEXRADレベル2のファイルリスト(1行1ファイル。相対パスでも絶対パスでも可)、False:fnameはNEXRAD LEVEL2ファイルのパス
 ppi_use = (0, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13) #CAPPIに使用するPPI仰角番号
 
-outdir = './out_cappi'     #出力ディレクトリ
+outdir = './out_cappi_ver20240709'     #出力ディレクトリ
 flag_nc = True             #True:NetCDFファイルを出力(推奨。GrADSで読みだすにはctlファイルが必要)
 flag_gradsbin = True       #True:grads 4byteバイナリとctlファイルを出力
 
@@ -39,8 +41,9 @@ limit_x = (-300000,300000) #東西方向のCAPPI作成範囲(m)
 interp_method = 'Cressman' #内挿方法(Cressman, Barnes2推奨、他にBarnes, Nearestが選択可)
 roi_const = 2000.          #内挿の影響円半径(meter,このスクリプトでは半径を固定させて内挿を実施する)
 
-flag_dupol = True          #True:偏波パラメータ(Zdr,Kdp,ρhv)を出力、False:ZhとVのみ出力
-zdrbias = None             #Zdrバイアス(未知の場合はNoneと入力)
+flag_v     = False        #True:ドップラー速度も出力
+flag_dupol = False        #True:偏波パラメータ(Zdr,Kdp,ρhv)も出力
+zdrbias    = None         #Zdrバイアス(未知の場合はNoneと入力)
 
 ##パラメータ設定ここまで
 #%%
@@ -54,9 +57,9 @@ def extract_4bytes(grid, latlon, varname):
     dlon = abs(lons[int(len(lons)/2),-1] - slon) / (len(lons[0]) - 1.)
     dlat = abs(lats[-1, int(len(lats)/2)] - slat) / (len(lats[0]) - 1.)
 
-    data = grid.fields[varname]['data'].__array__()
-    data_nonan = np.nan_to_num(data,nan=-9999.).astype('float32')
-    return data_nonan, slon, dlon, slat, dlat
+    data = grid.fields[varname]['data'].filled(-9999.).astype('float32')
+
+    return data, slon, dlon, slat, dlat
 
 
 # %%
@@ -92,18 +95,18 @@ def Make_GradsCtl(ctlfname, binfname, undef, xnum, slon, dlon, ynum, slat, dlat,
 
 #%%
 #save_ncvariable: netCDFに変数情報を保存する
-def save_ncvariable(nc,var,undef,vname,vname_long,vunits,vdtype,vdim):
+def save_ncvariable(nc,var,undef,vname,vname_long,vunits,vdtype,vdim,comment=None):
     ncvar = nc.createVariable(vname,vdtype,vdim)
     ncvar.long_name = vname_long
     ncvar.standatd_name = vname_long
     ncvar.units = vunits
     if undef != None: ncvar.missing_value = undef
     ncvar[:] = var
+    if comment is not None: ncvar.comment = comment
 
 #out_nc: netCDFファイルに解析結果を出力する
 def out_nc(ncname,undef,xnum,sx,dx,lons,ynum,sy,dy,lats,znum,sz,dz,
-           date_str,vars,varnames,meta):
-    import netCDF4
+           date_str,vars,varnames,meta,origfname,ppi_use,interp_method,roi_const):
     nc = netCDF4.Dataset(ncname,'w',format='NETCDF3_CLASSIC')
     nc.createDimension('time',1)
     nc.createDimension('z',znum)
@@ -120,14 +123,18 @@ def out_nc(ncname,undef,xnum,sx,dx,lons,ynum,sy,dy,lats,znum,sz,dz,
     save_ncvariable(nc,y,None,'y','y coord from radar','m',np.dtype('float32').char,('y',))
     save_ncvariable(nc,x,None,'x','x coord from radar','m',np.dtype('float32').char,('x',))
 
-    save_ncvariable(nc,lats,None,'lat','latitude','degrees_north',np.dtype('float32').char,('y','x'))
-    save_ncvariable(nc,lons,None,'lon','longitude','degrees_east',np.dtype('float32').char,('y','x'))
+    save_ncvariable(nc,lats,None,'lat','latitude','degrees_north',np.dtype('float32').char,('y','x'),
+                    "Projection: Azimuthal equidistant centered at radar")
+    save_ncvariable(nc,lons,None,'lon','longitude','degrees_east',np.dtype('float32').char,('y','x'),
+                    "Projection: Azimuthal equidistant centered at radar")
 
     for v in range(len(varnames)):
         save_ncvariable(nc,vars[v],undef,varnames[v],meta[v][0],meta[v][1],np.dtype('float32').char,('time','z','y','x'))
 
-    nc.title ='CAPPI created from NEXRAD PPIs'
-    nc.history = 'Created by Make_CAPPI_NEXRAD.py'
+    nc.title    = 'CAPPI created from NEXRAD Level-II PPIs using Py-ART'
+    nc.history  = 'Created by Make_CAPPI_NEXRAD.py ver 1.1 (author: A.NISHII)'
+    nc.source   = f'{origfname} Used scum numbers: ({" ".join([str(p) for p in ppi_use])})'
+    nc.comment  = f'PPIs are interpolated using {interp_method} method with {roi_const:.0f} m radius'
 
     nc.close()
 
@@ -151,7 +158,7 @@ for f in files:
 
     if flag_dupol:
         kdp,pdp = pyart.retrieve.kdp_vulpiani(radar=radar_4ppi,psidp_field='differential_phase',
-                                            band='S',prefilter_psidp=True)
+                                              band='S',prefilter_psidp=True)
         radar_4ppi.add_field('specific_differential_phase',kdp)
         print('Kdp retrieved')
         if zdrbias != None:
@@ -168,21 +175,35 @@ for f in files:
     latlon = grid.get_point_longitude_latitude()
     display = pyart.graph.GridMapDisplay(grid)
 
-    #Save data to 4-byte binary
+    #保存のために4-byteバイナリデータを抽出
+    #Reflevtivity (デフォルト)
+    df = []
+    vnames = ['ref']
     df_z, slon, dlon, slat, dlat = extract_4bytes(grid,latlon,'reflectivity')
-    df_v, _, _, _, _ = extract_4bytes(grid,latlon,'velocity')
+    df.append(df_z)
+
+    #ドップラー速度(flag_vがTrueの場合)
+    if flag_v:
+        df_v, _, _, _, _ = extract_4bytes(grid,latlon,'velocity')
+        df.append(df_v)
+        vnames.append('vel')
+
+    #偏波パラメータ(flag_dupolがTrueの場合)
     if flag_dupol:
         df_zdr, _, _, _, _ = extract_4bytes(grid,latlon,'differential_reflectivity')
         df_kdp, _, _, _, _ = extract_4bytes(grid,latlon,'specific_differential_phase')
         df_rhv, _, _, _, _ = extract_4bytes(grid,latlon,'cross_correlation_ratio')
-        df = np.array([df_z,df_v,df_zdr,df_kdp,df_rhv],dtype='float32')
-        vnames = ['ref','vel','zdr','kdp','rhv']
-        
-    else:
-        df = np.array([df_z,df_v],dtype='float32')
-        vnames = ['ref','vel']
+        df.append(df_zdr)
+        df.append(df_kdp)
+        df.append(df_rhv)
+        vnames.append('zdr')
+        vnames.append('kdp')
+        vnames.append('rhv')
+
+    df = np.array(df,dtype='float32')
     date_dt  = define_time_fromNEXRAD(f)
 
+    #GrADSバイナリ形式で保存
     if flag_gradsbin:
         locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
         date_str = date_dt.strftime("%H:%MZ%d%b%Y")
@@ -194,14 +215,15 @@ for f in files:
         Make_GradsCtl(outdir + '/bin/' + ctlfname_ll, binfname, -9999., df_z.shape[2], slon, dlon, df_z.shape[1], slat, dlat, 
                     df_z.shape[0], limit_z[0], (limit_z[1]-limit_z[0])/(grid_shape[0]-1)/1000., date_str, vnames)
         df.tofile(outdir + '/bin/' + binfname,format='<f4')
-        print('CAPPI (GrADS binary) saved to ' + outdir + '/' + binfname)
+        print('CAPPI (GrADS binary) saved to ' + outdir + '/bin/' + binfname)
 
     #netCDF形式で保存
     if flag_nc:
         #メタデータの抽出(list([standard_name,units] for _ in range(len(vnames))))
         meta = []
-        meta.append([grid.fields['reflectivity']['long_name'],grid.fields['reflectivity']['units']]) 
-        meta.append([grid.fields['velocity']['long_name'],grid.fields['velocity']['units']]) 
+        meta.append([grid.fields['reflectivity']['long_name'],grid.fields['reflectivity']['units']])
+        if flag_v:
+            meta.append([grid.fields['velocity']['long_name'],grid.fields['velocity']['units']]) 
         if flag_dupol:
             meta.append([grid.fields['differential_reflectivity']['long_name'],grid.fields['differential_reflectivity']['units']]) 
             meta.append([grid.fields['specific_differential_phase']['long_name'],grid.fields['specific_differential_phase']['units']]) 
@@ -213,6 +235,5 @@ for f in files:
             df_z.shape[2], limit_x[0],(limit_x[1]-limit_x[0])/(grid_shape[2]-1),latlon[0], 
             df_z.shape[1], limit_y[0],(limit_y[1]-limit_y[0])/(grid_shape[1]-1),latlon[1],
             df_z.shape[0], limit_z[0],(limit_z[1]-limit_z[0])/(grid_shape[0]-1),
-            datestr_nc,df,vnames,meta)
-        print('CAPPI (nc) saved to ' + ncdir + '/' + ncname)
-
+            datestr_nc,df,vnames,meta,basename(f),ppi_use,interp_method,roi_const)
+        print('CAPPI (nc) saved to ' + ncdir + ncname)
