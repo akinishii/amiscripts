@@ -133,7 +133,7 @@ def out_nc(ncname,undef,xnum,sx,dx,lons,ynum,sy,dy,lats,znum,sz,dz,
         save_ncvariable(nc,vars[v],undef,varnames[v],meta[v][0],meta[v][1],np.dtype('float32').char,('time','z','y','x'))
 
     nc.title    = 'CAPPI created from NEXRAD Level-II PPIs using Py-ART'
-    nc.history  = 'Created by Make_CAPPI_NEXRAD.py ver 1.1 (author: A.NISHII)'
+    nc.history  = 'Created by Make_CAPPI_NEXRAD.py ver 1.2 (author: A.NISHII)'
     nc.source   = f'{origfname} Used scum numbers: ({" ".join([str(p) for p in ppi_use])})'
     nc.comment  = f'PPIs are interpolated using {interp_method} method with {roi_const:.0f} m radius'
 
