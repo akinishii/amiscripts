@@ -10,6 +10,7 @@ NEXRAD Level-IIデータからPyartを用いてCAPPIを作成する
 HISTORY(yyyy.mm.dd)
 ver 1.0 First created 2023.05.15 A.NISHII
 ver 1.1 Bug fixed (fill_valueの設定ミス) ドップラー速度出力をフラグ化 2024.07.09 A.NISHII
+ver 1.2 Bug fixed (gatefilter設定ミス) 2024.07.10 A.NISHII
 """
 
 import numpy as np
@@ -171,7 +172,7 @@ for f in files:
 
     #CAPPI作成
     grid = pyart.map.grid_from_radars(radar_4ppi,grid_shape=grid_shape,grid_limits=(limit_z,limit_y,limit_x), weighting_function='Cressman',
-                                    roi_func='constant', constant_roi = roi_const, gatefilter=gatefilter)
+                                    roi_func='constant', constant_roi = roi_const, gatefilters=gatefilter)
     latlon = grid.get_point_longitude_latitude()
     display = pyart.graph.GridMapDisplay(grid)
 
